@@ -6,6 +6,10 @@ struct ContentView: View {
     @Environment(\.colorScheme) var colorScheme
     @State private var isDroppingFile = false
 
+    #if os(macOS)
+    @State private var keyDownMonitor: Any?
+    #endif
+
     var body: some View {
         ZStack {
             // Canvas
@@ -51,6 +55,9 @@ struct ContentView: View {
         #endif
         .onAppear {
             setupKeyboardShortcuts()
+        }
+        .onDisappear {
+            tearDownKeyboardShortcuts()
         }
     }
 
@@ -108,13 +115,13 @@ struct ContentView: View {
                         #if os(iOS)
                         if let image = UIImage(data: data) {
                             let size = calculateImageSize(image.size)
-                            let position = dropPosition()
+                            let position = dropPosition(for: size)
                             store.addImage(data, at: position, size: size)
                         }
                         #elseif os(macOS)
                         if let image = NSImage(data: data) {
                             let size = calculateImageSize(image.size)
-                            let position = dropPosition()
+                            let position = dropPosition(for: size)
                             store.addImage(data, at: position, size: size)
                         }
                         #endif
@@ -128,13 +135,14 @@ struct ContentView: View {
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.pdf.identifier) { data, error in
                     guard let data = data else { return }
                     DispatchQueue.main.async {
-                        let position = dropPosition()
+                        let size = CGSize(width: 300, height: 400)
+                        let position = dropPosition(for: size)
                         store.addFile(
                             data,
                             fileName: "Document.pdf",
                             fileType: .pdf,
                             at: position,
-                            size: CGSize(width: 300, height: 400)
+                            size: size
                         )
                     }
                 }
@@ -151,15 +159,16 @@ struct ContentView: View {
                         let fileData = try Data(contentsOf: url)
                         let fileName = url.lastPathComponent
                         let fileType: FileType = url.pathExtension.lowercased() == "pdf" ? .pdf : .document
+                        let size = CGSize(width: 300, height: 400)
 
                         DispatchQueue.main.async {
-                            let position = dropPosition()
+                            let position = dropPosition(for: size)
                             store.addFile(
                                 fileData,
                                 fileName: fileName,
                                 fileType: fileType,
                                 at: position,
-                                size: CGSize(width: 300, height: 400)
+                                size: size
                             )
                         }
                     } catch {
@@ -172,13 +181,20 @@ struct ContentView: View {
         return false
     }
 
-    private func dropPosition() -> CGPoint {
-        let centerX = -store.viewport.x / store.viewport.scale
-        let centerY = -store.viewport.y / store.viewport.scale
-        // Add some randomness to avoid stacking
+    private func dropPosition(for size: CGSize) -> CGPoint {
+        let center = visibleCanvasCenter()
+        // Add some randomness to avoid stacking.
         return CGPoint(
-            x: centerX + CGFloat.random(in: -50...50),
-            y: centerY + CGFloat.random(in: -50...50)
+            x: center.x - size.width / 2 + CGFloat.random(in: -50...50),
+            y: center.y - size.height / 2 + CGFloat.random(in: -50...50)
+        )
+    }
+
+    private func visibleCanvasCenter() -> CGPoint {
+        let scale = max(store.viewport.scale, 0.0001)
+        return CGPoint(
+            x: -store.viewport.x / scale,
+            y: -store.viewport.y / scale
         )
     }
 
@@ -195,8 +211,15 @@ struct ContentView: View {
 
     private func setupKeyboardShortcuts() {
         #if os(macOS)
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // Cmd+Z for undo
+        guard keyDownMonitor == nil else { return }
+
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Let the active TextEditor own text-editing shortcuts and Delete/Backspace.
+            guard store.editingNoteId == nil else {
+                return event
+            }
+
+            // Cmd+Z for canvas undo/redo.
             if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "z" {
                 if event.modifierFlags.contains(.shift) {
                     store.redo()
@@ -206,13 +229,22 @@ struct ContentView: View {
                 return nil
             }
 
-            // Delete/Backspace for deleting selected items
+            // Delete/Backspace for deleting selected canvas items only when not editing text.
             if event.keyCode == 51 || event.keyCode == 117 { // Backspace or Delete
                 store.deleteSelected()
                 return nil
             }
 
             return event
+        }
+        #endif
+    }
+
+    private func tearDownKeyboardShortcuts() {
+        #if os(macOS)
+        if let keyDownMonitor {
+            NSEvent.removeMonitor(keyDownMonitor)
+            self.keyDownMonitor = nil
         }
         #endif
     }
