@@ -12,8 +12,8 @@ class CanvasStore: ObservableObject {
     @Published var selectedFileId: UUID?
     @Published var editingNoteId: UUID?
 
-    private var undoStack: [[CanvasState]] = []
-    private var redoStack: [[CanvasState]] = []
+    private var undoStack: [CanvasState] = []
+    private var redoStack: [CanvasState] = []
     private let maxUndoSteps = 50
 
     private let saveKey = "interectnote-storage"
@@ -56,13 +56,21 @@ class CanvasStore: ObservableObject {
         save()
     }
 
-    func updateNote(_ id: UUID, updates: (inout Note) -> Void) {
-        saveState()
+    func updateNote(_ id: UUID, recordUndo: Bool = true, updates: (inout Note) -> Void) {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        if recordUndo { saveState() }
+
         var note = notes[index]
         updates(&note)
         note.updatedAt = Date()
         notes[index] = note
+        save()
+    }
+
+    func updateNoteContent(_ id: UUID, content: String) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].content = content
+        notes[index].updatedAt = Date()
         save()
     }
 
@@ -110,9 +118,10 @@ class CanvasStore: ObservableObject {
         save()
     }
 
-    func updateImage(_ id: UUID, updates: (inout CanvasImage) -> Void) {
-        saveState()
+    func updateImage(_ id: UUID, recordUndo: Bool = true, updates: (inout CanvasImage) -> Void) {
         guard let index = images.firstIndex(where: { $0.id == id }) else { return }
+        if recordUndo { saveState() }
+
         var image = images[index]
         updates(&image)
         images[index] = image
@@ -161,9 +170,10 @@ class CanvasStore: ObservableObject {
         save()
     }
 
-    func updateFile(_ id: UUID, updates: (inout CanvasFile) -> Void) {
-        saveState()
+    func updateFile(_ id: UUID, recordUndo: Bool = true, updates: (inout CanvasFile) -> Void) {
         guard let index = files.firstIndex(where: { $0.id == id }) else { return }
+        if recordUndo { saveState() }
+
         var file = files[index]
         updates(&file)
         files[index] = file
@@ -237,15 +247,21 @@ class CanvasStore: ObservableObject {
 
     // MARK: - Undo/Redo
 
-    private struct CanvasState: Codable {
+    private struct CanvasState: Codable, Equatable {
         let notes: [Note]
         let images: [CanvasImage]
         let files: [CanvasFile]
     }
 
+    func recordUndoCheckpoint() {
+        saveState()
+    }
+
     private func saveState() {
         let state = CanvasState(notes: notes, images: images, files: files)
-        undoStack.append([state])
+        guard undoStack.last != state else { return }
+
+        undoStack.append(state)
         if undoStack.count > maxUndoSteps {
             undoStack.removeFirst()
         }
@@ -253,9 +269,9 @@ class CanvasStore: ObservableObject {
     }
 
     func undo() {
-        guard let lastState = undoStack.popLast()?.first else { return }
+        guard let lastState = undoStack.popLast() else { return }
         let currentState = CanvasState(notes: notes, images: images, files: files)
-        redoStack.append([currentState])
+        redoStack.append(currentState)
 
         notes = lastState.notes
         images = lastState.images
@@ -264,9 +280,9 @@ class CanvasStore: ObservableObject {
     }
 
     func redo() {
-        guard let nextState = redoStack.popLast()?.first else { return }
+        guard let nextState = redoStack.popLast() else { return }
         let currentState = CanvasState(notes: notes, images: images, files: files)
-        undoStack.append([currentState])
+        undoStack.append(currentState)
 
         notes = nextState.notes
         images = nextState.images
