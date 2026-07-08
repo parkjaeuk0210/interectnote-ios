@@ -15,15 +15,21 @@ struct ToolbarView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // File upload button
+            // Image upload button
             PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                ToolbarButton(icon: "icloud.and.arrow.up")
+                ToolbarButton(icon: "photo.badge.plus")
             }
             .onChange(of: selectedPhotoItem) { _, newItem in
                 Task {
                     await loadImage(from: newItem)
                 }
             }
+
+            // File/PDF upload button
+            Button(action: { showingFilePicker = true }) {
+                ToolbarButton(icon: "doc.badge.plus")
+            }
+            .buttonStyle(PlainButtonStyle())
 
             // Zoom percentage
             Text("\(Int(store.viewport.scale * 100))%")
@@ -81,7 +87,7 @@ struct ToolbarView: View {
             }
 
             // Clear all button (if there are notes)
-            if !store.notes.isEmpty {
+            if !store.notes.isEmpty || !store.images.isEmpty || !store.files.isEmpty {
                 Divider()
                     .frame(width: 24)
                     .background(Color.gray.opacity(0.3))
@@ -122,6 +128,12 @@ struct ToolbarView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 28))
         .shadow(color: .black.opacity(0.15), radius: 16, x: 0, y: 8)
+        .fileImporter(
+            isPresented: $showingFilePicker,
+            allowedContentTypes: [.pdf, .item],
+            allowsMultipleSelection: false,
+            onCompletion: handleFileImport
+        )
     }
 
     private func loadImage(from item: PhotosPickerItem?) async {
@@ -133,16 +145,12 @@ struct ToolbarView: View {
                     #if os(iOS)
                     if let uiImage = UIImage(data: data) {
                         let size = calculateImageSize(uiImage.size)
-                        let centerX = -store.viewport.x / store.viewport.scale
-                        let centerY = -store.viewport.y / store.viewport.scale
-                        store.addImage(data, at: CGPoint(x: centerX, y: centerY), size: size)
+                        store.addImage(data, at: centeredOrigin(for: size), size: size)
                     }
                     #elseif os(macOS)
                     if let nsImage = NSImage(data: data) {
                         let size = calculateImageSize(nsImage.size)
-                        let centerX = -store.viewport.x / store.viewport.scale
-                        let centerY = -store.viewport.y / store.viewport.scale
-                        store.addImage(data, at: CGPoint(x: centerX, y: centerY), size: size)
+                        store.addImage(data, at: centeredOrigin(for: size), size: size)
                     }
                     #endif
                 }
@@ -150,6 +158,60 @@ struct ToolbarView: View {
         } catch {
             print("Failed to load image: \(error)")
         }
+    }
+
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            try loadFile(from: url)
+        } catch {
+            print("Failed to import file: \(error)")
+        }
+    }
+
+    private func loadFile(from url: URL) throws {
+        let hasSecurityScope = url.startAccessingSecurityScopedResource()
+        defer {
+            if hasSecurityScope {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let fileData = try Data(contentsOf: url)
+        let fileName = url.lastPathComponent
+        let fileType: FileType = url.pathExtension.lowercased() == "pdf" ? .pdf : .document
+        let size: CGSize
+
+        switch fileType {
+        case .pdf:
+            size = CGSize(width: 300, height: 400)
+        case .document, .other:
+            size = CGSize(width: 240, height: 180)
+        }
+
+        store.addFile(
+            fileData,
+            fileName: fileName,
+            fileType: fileType,
+            at: centeredOrigin(for: size),
+            size: size
+        )
+    }
+
+    private func centeredOrigin(for size: CGSize) -> CGPoint {
+        let center = visibleCanvasCenter()
+        return CGPoint(
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2
+        )
+    }
+
+    private func visibleCanvasCenter() -> CGPoint {
+        let scale = max(store.viewport.scale, 0.0001)
+        return CGPoint(
+            x: -store.viewport.x / scale,
+            y: -store.viewport.y / scale
+        )
     }
 
     private func calculateImageSize(_ originalSize: CGSize) -> CGSize {
