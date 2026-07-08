@@ -107,12 +107,13 @@ struct CanvasImageView: View {
                     isDragging = true
                     store.selectImage(image.id)
                 }
-                dragOffset = value.translation
+                dragOffset = canvasTranslation(value.translation)
             }
             .onEnded { value in
+                let translation = canvasTranslation(value.translation)
                 store.updateImage(image.id) { img in
-                    img.x += value.translation.width
-                    img.y += value.translation.height
+                    img.x += translation.width
+                    img.y += translation.height
                 }
                 dragOffset = .zero
                 isDragging = false
@@ -125,14 +126,16 @@ struct CanvasImageView: View {
                 if !isResizing {
                     isResizing = true
                     resizeStart = CGSize(width: image.width, height: image.height)
+                    store.recordUndoCheckpoint()
                 }
 
                 // Maintain aspect ratio
+                let translation = canvasTranslation(value.translation)
                 let aspectRatio = resizeStart.width / resizeStart.height
-                let newWidth = max(50, resizeStart.width + value.translation.width)
+                let newWidth = max(50, resizeStart.width + translation.width)
                 let newHeight = newWidth / aspectRatio
 
-                store.updateImage(image.id) { img in
+                store.updateImage(image.id, recordUndo: false) { img in
                     img.width = newWidth
                     img.height = newHeight
                 }
@@ -140,6 +143,14 @@ struct CanvasImageView: View {
             .onEnded { _ in
                 isResizing = false
             }
+    }
+
+    private func canvasTranslation(_ translation: CGSize) -> CGSize {
+        let scale = max(store.viewport.scale, 0.0001)
+        return CGSize(
+            width: translation.width / scale,
+            height: translation.height / scale
+        )
     }
 }
 
