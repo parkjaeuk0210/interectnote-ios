@@ -4,7 +4,10 @@ struct InfiniteCanvasView: View {
     @EnvironmentObject var store: CanvasStore
     @State private var isDraggingCanvas = false
     @State private var lastDragPosition: CGPoint = .zero
-    @GestureState private var magnifyBy: CGFloat = 1.0
+    @State private var isMagnifying = false
+    @State private var viewportAtMagnificationStart: Viewport = .default
+
+    private let defaultNoteSize = CGSize(width: 260, height: 180)
 
     var body: some View {
         GeometryReader { geometry in
@@ -13,17 +16,26 @@ struct InfiniteCanvasView: View {
                 CanvasBackgroundView()
                     .ignoresSafeArea()
 
-                // Canvas content
+                // Canvas content. The stored canvas origin maps to the visible center
+                // plus viewport offset, and panning is applied after scaling so pan
+                // velocity stays constant at every zoom level.
                 canvasContent
-                    .offset(x: store.viewport.x, y: store.viewport.y)
-                    .scaleEffect(store.viewport.scale)
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                    .scaleEffect(store.viewport.scale, anchor: .topLeading)
+                    .offset(
+                        x: geometry.size.width / 2 + store.viewport.x,
+                        y: geometry.size.height / 2 + store.viewport.y
+                    )
             }
             .contentShape(Rectangle())
             .gesture(combinedGesture)
             .onTapGesture(count: 2) { location in
-                // Double tap to add note
+                // Double tap to add a note centered on the tapped canvas point.
                 let canvasPoint = screenToCanvas(location, in: geometry)
-                store.addNote(at: canvasPoint)
+                store.addNote(at: CGPoint(
+                    x: canvasPoint.x - defaultNoteSize.width / 2,
+                    y: canvasPoint.y - defaultNoteSize.height / 2
+                ))
             }
             .onTapGesture(count: 1) {
                 // Single tap to deselect
@@ -34,7 +46,7 @@ struct InfiniteCanvasView: View {
     }
 
     private var canvasContent: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             // Render all items sorted by zIndex
             ForEach(sortedItems, id: \.id) { item in
                 switch item {
@@ -110,25 +122,34 @@ struct InfiniteCanvasView: View {
 
     private var magnificationGesture: some Gesture {
         MagnificationGesture()
-            .updating($magnifyBy) { value, state, _ in
-                state = value
-            }
             .onChanged { value in
-                let newScale = store.viewport.clampedScale(store.viewport.scale * value)
+                if !isMagnifying {
+                    isMagnifying = true
+                    viewportAtMagnificationStart = store.viewport
+                }
+
+                let startScale = max(viewportAtMagnificationStart.scale, 0.0001)
+                let newScale = store.viewport.clampedScale(startScale * value)
+                let ratio = newScale / startScale
+
                 store.setViewport(Viewport(
-                    x: store.viewport.x,
-                    y: store.viewport.y,
+                    x: viewportAtMagnificationStart.x * ratio,
+                    y: viewportAtMagnificationStart.y * ratio,
                     scale: newScale
                 ))
+            }
+            .onEnded { _ in
+                isMagnifying = false
             }
     }
 
     private func screenToCanvas(_ point: CGPoint, in geometry: GeometryProxy) -> CGPoint {
         let centerX = geometry.size.width / 2
         let centerY = geometry.size.height / 2
+        let scale = max(store.viewport.scale, 0.0001)
 
-        let x = (point.x - centerX - store.viewport.x) / store.viewport.scale
-        let y = (point.y - centerY - store.viewport.y) / store.viewport.scale
+        let x = (point.x - centerX - store.viewport.x) / scale
+        let y = (point.y - centerY - store.viewport.y) / scale
 
         return CGPoint(x: x, y: y)
     }

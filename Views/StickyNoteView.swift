@@ -117,7 +117,7 @@ struct StickyNoteView: View {
                 TextEditor(text: Binding(
                     get: { note.content },
                     set: { newValue in
-                        store.updateNote(note.id) { $0.content = newValue }
+                        store.updateNoteContent(note.id, content: newValue)
                     }
                 ))
                 .font(.system(size: 15))
@@ -197,12 +197,13 @@ struct StickyNoteView: View {
                     isDragging = true
                     store.selectNote(note.id)
                 }
-                dragOffset = value.translation
+                dragOffset = canvasTranslation(value.translation)
             }
             .onEnded { value in
+                let translation = canvasTranslation(value.translation)
                 store.updateNote(note.id) { note in
-                    note.x += value.translation.width
-                    note.y += value.translation.height
+                    note.x += translation.width
+                    note.y += translation.height
                 }
                 dragOffset = .zero
                 isDragging = false
@@ -215,12 +216,14 @@ struct StickyNoteView: View {
                 if !isResizing {
                     isResizing = true
                     resizeStart = CGSize(width: note.width, height: note.height)
+                    store.recordUndoCheckpoint()
                 }
 
-                let newWidth = max(150, resizeStart.width + value.translation.width)
-                let newHeight = max(100, resizeStart.height + value.translation.height)
+                let translation = canvasTranslation(value.translation)
+                let newWidth = max(150, resizeStart.width + translation.width)
+                let newHeight = max(100, resizeStart.height + translation.height)
 
-                store.updateNote(note.id) { note in
+                store.updateNote(note.id, recordUndo: false) { note in
                     note.width = newWidth
                     note.height = newHeight
                 }
@@ -228,6 +231,14 @@ struct StickyNoteView: View {
             .onEnded { _ in
                 isResizing = false
             }
+    }
+
+    private func canvasTranslation(_ translation: CGSize) -> CGSize {
+        let scale = max(store.viewport.scale, 0.0001)
+        return CGSize(
+            width: translation.width / scale,
+            height: translation.height / scale
+        )
     }
 }
 

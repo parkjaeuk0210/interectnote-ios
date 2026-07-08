@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  build:
+    name: Build
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: SwiftPM build
+        run: swift build
+
+      - name: Xcode macOS build
+        run: |
+          xcodebuild \
+            -project InterectNote.xcodeproj \
+            -scheme InterectNote \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Xcode iOS Simulator build
+        run: |
+          xcodebuild \
+            -project InterectNote.xcodeproj \
+            -scheme InterectNote \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            CODE_SIGNING_ALLOWED=NO \
+            build

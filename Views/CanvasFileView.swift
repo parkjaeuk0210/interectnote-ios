@@ -129,12 +129,13 @@ struct CanvasFileView: View {
                     isDragging = true
                     store.selectFile(file.id)
                 }
-                dragOffset = value.translation
+                dragOffset = canvasTranslation(value.translation)
             }
             .onEnded { value in
+                let translation = canvasTranslation(value.translation)
                 store.updateFile(file.id) { f in
-                    f.x += value.translation.width
-                    f.y += value.translation.height
+                    f.x += translation.width
+                    f.y += translation.height
                 }
                 dragOffset = .zero
                 isDragging = false
@@ -147,12 +148,14 @@ struct CanvasFileView: View {
                 if !isResizing {
                     isResizing = true
                     resizeStart = CGSize(width: file.width, height: file.height)
+                    store.recordUndoCheckpoint()
                 }
 
-                let newWidth = max(100, resizeStart.width + value.translation.width)
-                let newHeight = max(100, resizeStart.height + value.translation.height)
+                let translation = canvasTranslation(value.translation)
+                let newWidth = max(100, resizeStart.width + translation.width)
+                let newHeight = max(100, resizeStart.height + translation.height)
 
-                store.updateFile(file.id) { f in
+                store.updateFile(file.id, recordUndo: false) { f in
                     f.width = newWidth
                     f.height = newHeight
                 }
@@ -160,6 +163,14 @@ struct CanvasFileView: View {
             .onEnded { _ in
                 isResizing = false
             }
+    }
+
+    private func canvasTranslation(_ translation: CGSize) -> CGSize {
+        let scale = max(store.viewport.scale, 0.0001)
+        return CGSize(
+            width: translation.width / scale,
+            height: translation.height / scale
+        )
     }
 }
 

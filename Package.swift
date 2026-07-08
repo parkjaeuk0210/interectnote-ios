@@ -30,7 +30,8 @@ let package = Package(
                 "Views/SettingsView.swift",
                 "Views/Components/ToolbarView.swift",
                 "Views/Components/FloatingButtonView.swift",
-                "Views/Components/TopBarView.swift"
+                "Views/Components/TopBarView.swift",
+                "Views/Components/ColorPickerView.swift"
             ]
         )
     ]
