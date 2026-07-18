@@ -1,0 +1,37 @@
+name: Feature or implementation task
+description: Plan a product or engineering change with measurable acceptance criteria.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: User outcome
+      description: What can a user accomplish after this ships?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Describe included behavior and important exclusions.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] Observable criterion
+        - [ ] Test or performance criterion
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and dependencies
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Link the product vision, architecture document, ADR or parent Epic.
